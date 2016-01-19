@@ -130,7 +130,7 @@ static void produce (void *buf, size_t len, int32_t partition,
                         FATAL("Program terminated while "
                               "producing message of %zd bytes", len);
 
-                if (rd_kafka_produce(conf.rkt, conf.partition, msgflags,
+                if (rd_kafka_produce(conf.rkt, partition, msgflags,
                                      buf, len, key, key_len, NULL) != -1) {
                         stats.tx++;
                         break;
