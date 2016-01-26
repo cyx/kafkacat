@@ -38,6 +38,7 @@
 #include <sys/mman.h>
 
 
+#include "fnv.h"
 #include "kafkacat.h"
 
 
@@ -118,7 +119,7 @@ static void dr_msg_cb (rd_kafka_t *rk, const rd_kafka_message_t *rkmessage,
  * Produces a single message, retries on queue congestion, and
  * exits hard on error.
  */
-static void produce (void *buf, size_t len,
+static void produce (void *buf, size_t len, int32_t partition,
                      const void *key, size_t key_len, int msgflags) {
 
         /* Produce message: keep trying until it succeeds. */
@@ -129,7 +130,7 @@ static void produce (void *buf, size_t len,
                         FATAL("Program terminated while "
                               "producing message of %zd bytes", len);
 
-                if (rd_kafka_produce(conf.rkt, conf.partition, msgflags,
+                if (rd_kafka_produce(conf.rkt, partition, msgflags,
                                      buf, len, key, key_len, NULL) != -1) {
                         stats.tx++;
                         break;
@@ -189,7 +190,7 @@ static ssize_t produce_file (const char *path) {
 
         INFO(4, "Producing file %s (%"PRIdMAX" bytes)\n",
              path, (intmax_t)st.st_size);
-        produce(ptr, st.st_size, NULL, 0, RD_KAFKA_MSG_F_COPY);
+        produce(ptr, st.st_size, conf.partition, NULL, 0, RD_KAFKA_MSG_F_COPY);
 
         munmap(ptr, st.st_size);
         return st.st_size;
@@ -253,6 +254,7 @@ static void producer_run (FILE *fp, char **paths, int pathcnt) {
                         char *key = NULL;
                         size_t key_len = 0;
                         size_t orig_len = len;
+                        int32_t partition = conf.partition; // default to specified partition.
 
                         if (len == 0)
                                 continue;
@@ -289,6 +291,13 @@ static void producer_run (FILE *fp, char **paths, int pathcnt) {
                                 }
                         }
 
+                        // QUICK HACK TEST: FNV1a this and modulo by -(conf.partition).
+                        // We have a key, and we've asked for our hack.
+                        if (key != NULL && conf.partition < RD_KAFKA_PARTITION_UA) {
+                                partition = ((int32_t) fnv_32a_buf(key, key_len, FNV1_32A_INIT)) \
+                                        % -(conf.partition);
+                        }
+
                         if (!(msgflags & RD_KAFKA_MSG_F_COPY) &&
                             len > 1024 && !(conf.flags & CONF_F_TEE)) {
                                 /* If message is larger than this arbitrary
@@ -307,7 +316,7 @@ static void producer_run (FILE *fp, char **paths, int pathcnt) {
                         }
 
                         /* Produce message */
-                        produce(buf, len, key, key_len, msgflags);
+                        produce(buf, len, partition,  key, key_len, msgflags);
 
                         if (conf.flags & CONF_F_TEE &&
                             fwrite(sbuf, orig_len, 1, stdout) != 1)
