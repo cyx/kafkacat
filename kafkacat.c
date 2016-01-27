@@ -206,7 +206,6 @@ static void producer_run (FILE *fp, char **paths, int pathcnt) {
         size_t  size = 0;
         ssize_t len;
         char    errstr[512];
-        Fnv32_t prev_hash_val = FNV1_32A_INIT;
 
         /* Assign per-message delivery report callback. */
         rd_kafka_conf_set_dr_msg_cb(conf.rk_conf, dr_msg_cb);
@@ -295,8 +294,8 @@ static void producer_run (FILE *fp, char **paths, int pathcnt) {
                         // QUICK HACK TEST: FNV1a this and modulo by -(conf.partition).
                         // We have a key, and we've asked for our hack.
                         if (key != NULL && conf.partition < RD_KAFKA_PARTITION_UA) {
-                                prev_hash_val = fnv_32a_buf(key, key_len, prev_hash_val);
-                                partition = ((int32_t) prev_hash_val) % -(conf.partition);
+                                partition = ((int32_t) fnv_32a_buf(key, key_len, FNV1_32A_INIT)) \
+                                    % -(conf.partition);
 
                                 if (partition < 0) {
                                     partition = partition * -1;
